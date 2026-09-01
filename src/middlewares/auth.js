@@ -117,6 +117,8 @@ function csrfProtection(req, res, next) {
   const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(",") || [
     "http://localhost:3000",
     "http://localhost:3001",
+    "https://binaa-managment.vercel.app",
+    "https://binaa-chi.vercel.app",
   ];
 
   // السماح للطلبات من نفس المصدر فقط
