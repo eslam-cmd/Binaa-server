@@ -167,10 +167,11 @@ exports.loginStep2 = async (req, res) => {
     ).catch(console.error);
 
     // تعيين الكوكيز
+    const isProduction = process.env.NODE_ENV === "production";
     res.cookie("session_token", sessionToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
+      secure: isProduction,
+      sameSite: isProduction ? "none" : "lax",
       path: "/",
       maxAge:
         parseInt(process.env.SESSION_EXPIRY_DAYS || 7) * 24 * 60 * 60 * 1000,
@@ -234,10 +235,11 @@ exports.logout = async (req, res) => {
       );
     }
 
+    const isProduction = process.env.NODE_ENV === "production";
     res.clearCookie("session_token", {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
+      secure: isProduction,
+      sameSite: isProduction ? "none" : "lax",
       path: "/",
     });
 
