@@ -143,6 +143,7 @@ function csrfProtection(req, res, next) {
     "https://binaa-managment.vercel.app",
     "https://binaa-chi.vercel.app",
     "https://binaa-server.vercel.app",
+    "https://my-profile-personal-nextjs.vercel.app"
   ];
 
   // السماح للطلبات من نفس المصدر فقط

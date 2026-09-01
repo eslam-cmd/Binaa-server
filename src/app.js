@@ -41,7 +41,7 @@ const app = express();
 // =============================================
 const allowedOrigins = (
   process.env.ALLOWED_ORIGINS ||
-  "https://binaa-managment.vercel.app,https://binaa-chi.vercel.app,http://localhost:3000,http://localhost:3001,https://binaa-server.vercel.app"
+  "https://binaa-managment.vercel.app,https://my-profile-personal-nextjs.vercel.app,https://binaa-chi.vercel.app,http://localhost:3000,http://localhost:3001,https://binaa-server.vercel.app"
 )
   .split(",")
   .map((origin) => origin.trim())

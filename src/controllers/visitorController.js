@@ -3,8 +3,19 @@ const pool = require("../config/database");
 // تسجيل زائر جديد
 exports.trackVisitor = async (req, res) => {
   try {
-    const { visitorId, page, email, ip, browser, os, device, userAgent } =
-      req.body;
+    const {
+      visitorId,
+      page,
+      email,
+      ip,
+      browser,
+      os,
+      device,
+      userAgent,
+      source, // جديد
+      referrer, // جديد
+      utm, // جديد: { utm_source, utm_medium, utm_campaign }
+    } = req.body;
 
     if (!visitorId) {
       return res.status(400).json({ error: "معرف الزائر مطلوب" });
@@ -29,13 +40,33 @@ exports.trackVisitor = async (req, res) => {
          SET last_visit = CURRENT_TIMESTAMP,
              visit_count = visit_count + 1,
              pages_visited = $1,
-             email = COALESCE($2, email),
-             ip_address = COALESCE($3, ip_address),
-             browser = COALESCE($4, browser),
-             os = COALESCE($5, os),
-             device = COALESCE($6, device)
-         WHERE visitor_id = $7`,
-        [pagesVisited, email, ip, browser, os, device, visitorId],
+             page = $2,
+             source = COALESCE($3, source, 'direct'),
+             referrer = COALESCE($4, referrer),
+             utm_source = COALESCE($5, utm_source),
+             utm_medium = COALESCE($6, utm_medium),
+             utm_campaign = COALESCE($7, utm_campaign),
+             email = COALESCE($8, email),
+             ip_address = COALESCE($9, ip_address),
+             browser = COALESCE($10, browser),
+             os = COALESCE($11, os),
+             device = COALESCE($12, device)
+         WHERE visitor_id = $13`,
+        [
+          pagesVisited,
+          page,
+          source,
+          referrer,
+          utm?.utm_source || null,
+          utm?.utm_medium || null,
+          utm?.utm_campaign || null,
+          email,
+          ip,
+          browser,
+          os,
+          device,
+          visitorId,
+        ],
       );
 
       return res.json({
@@ -48,9 +79,25 @@ exports.trackVisitor = async (req, res) => {
       await pool.query(
         `INSERT INTO visitors (
           visitor_id, ip_address, user_agent, browser, os, device,
-          email, pages_visited
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-        [visitorId, ip, userAgent, browser, os, device, email || null, [page]],
+          email, source, referrer, page, 
+          utm_source, utm_medium, utm_campaign, pages_visited
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+        [
+          visitorId,
+          ip,
+          userAgent,
+          browser,
+          os,
+          device,
+          email || null,
+          source || "direct",
+          referrer || null,
+          page || "/",
+          utm?.utm_source || null,
+          utm?.utm_medium || null,
+          utm?.utm_campaign || null,
+          [page || "/"],
+        ],
       );
 
       return res.json({
@@ -73,7 +120,9 @@ exports.getVisitors = async (req, res) => {
 
     const result = await pool.query(
       `SELECT id, visitor_id, ip_address, browser, os, device, email,
-              visit_count, first_visit, last_visit, pages_visited
+              source, referrer, page, visit_count, 
+              utm_source, utm_medium, utm_campaign,
+              first_visit, last_visit, pages_visited
        FROM visitors 
        ORDER BY last_visit DESC 
        LIMIT $1 OFFSET $2`,
@@ -109,22 +158,32 @@ exports.getVisitorStats = async (req, res) => {
       "SELECT COUNT(*) FROM visitors WHERE DATE(last_visit) = CURRENT_DATE",
     );
 
-    // الزوار هذا الشهر
-    const monthResult = await pool.query(
-      "SELECT COUNT(*) FROM visitors WHERE DATE_TRUNC('month', last_visit) = DATE_TRUNC('month', CURRENT_DATE)",
+    // الزوار حسب المصدر
+    const sourceResult = await pool.query(
+      `SELECT source, COUNT(*) as count 
+       FROM visitors 
+       WHERE source IS NOT NULL
+       GROUP BY source 
+       ORDER BY count DESC`,
     );
 
-    // متوسط الزيارات لكل زائر
-    const avgResult = await pool.query("SELECT AVG(visit_count) FROM visitors");
-
-    // أكثر المتصفحات استخداماً
-    const browsersResult = await pool.query(
+    // الزوار حسب المتصفح
+    const browserResult = await pool.query(
       `SELECT browser, COUNT(*) as count 
        FROM visitors 
-       WHERE browser IS NOT NULL 
+       WHERE browser IS NOT NULL
        GROUP BY browser 
        ORDER BY count DESC 
        LIMIT 5`,
+    );
+
+    // الزوار حسب الجهاز
+    const deviceResult = await pool.query(
+      `SELECT device, COUNT(*) as count 
+       FROM visitors 
+       WHERE device IS NOT NULL
+       GROUP BY device 
+       ORDER BY count DESC`,
     );
 
     res.json({
@@ -132,9 +191,9 @@ exports.getVisitorStats = async (req, res) => {
       stats: {
         total: parseInt(totalResult.rows[0].count),
         today: parseInt(todayResult.rows[0].count),
-        thisMonth: parseInt(monthResult.rows[0].count),
-        avgVisits: parseFloat(avgResult.rows[0].avg) || 0,
-        topBrowsers: browsersResult.rows,
+        bySource: sourceResult.rows,
+        byBrowser: browserResult.rows,
+        byDevice: deviceResult.rows,
       },
     });
   } catch (error) {
