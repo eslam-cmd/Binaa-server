@@ -39,41 +39,43 @@ const app = express();
 // =============================================
 // إعدادات CORS
 // =============================================
-const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(",") || [
-  "http://localhost:3000",
-  "http://localhost:3001",
-  "https://binaa-managment.vercel.app",
-  "https://binaa-chi.vercel.app",
-  "https://binaa-server.vercel.app",
-];
+const allowedOrigins = (
+  process.env.ALLOWED_ORIGINS ||
+  "https://binaa-managment.vercel.app,https://binaa-chi.vercel.app,http://localhost:3000,http://localhost:3001,https://binaa-server.vercel.app"
+)
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      // السماح للطلبات بدون origin (مثل cURL)
-      if (!origin) {
-        return callback(null, true);
-      }
+const corsOptions = {
+  origin: (origin, callback) => {
+    // السماح للطلبات بدون origin (مثل cURL أو أدوات السيرفر)
+    if (!origin) {
+      return callback(null, true);
+    }
 
-      if (allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        console.warn(`⚠️ محاولة وصول من مصدر غير مسموح: ${origin}`);
-        callback(new Error("غير مسموح من هذا المصدر"));
-      }
-    },
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-    allowedHeaders: [
-      "Content-Type",
-      "Authorization",
-      "X-Requested-With",
-      "Accept",
-    ],
-    exposedHeaders: ["Set-Cookie"],
-    maxAge: 86400,
-  }),
-);
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    console.warn(`⚠️ محاولة وصول من مصدر غير مسموح: ${origin}`);
+    return callback(null, false);
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "X-Requested-With",
+    "Accept",
+  ],
+  exposedHeaders: ["Set-Cookie"],
+  maxAge: 86400,
+  optionsSuccessStatus: 204,
+};
+
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 
 // =============================================
 // Middlewares الأمان
