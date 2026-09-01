@@ -167,11 +167,15 @@ exports.loginStep2 = async (req, res) => {
     ).catch(console.error);
 
     // تعيين الكوكيز
-    const isProduction = process.env.NODE_ENV === "production";
+    const isSecureCookie =
+      process.env.NODE_ENV === "production" ||
+      req.secure ||
+      req.headers["x-forwarded-proto"] === "https";
+
     res.cookie("session_token", sessionToken, {
       httpOnly: true,
-      secure: isProduction,
-      sameSite: isProduction ? "none" : "lax",
+      secure: isSecureCookie,
+      sameSite: isSecureCookie ? "none" : "lax",
       path: "/",
       maxAge:
         parseInt(process.env.SESSION_EXPIRY_DAYS || 7) * 24 * 60 * 60 * 1000,
@@ -235,11 +239,15 @@ exports.logout = async (req, res) => {
       );
     }
 
-    const isProduction = process.env.NODE_ENV === "production";
+    const isSecureCookie =
+      process.env.NODE_ENV === "production" ||
+      req.secure ||
+      req.headers["x-forwarded-proto"] === "https";
+
     res.clearCookie("session_token", {
       httpOnly: true,
-      secure: isProduction,
-      sameSite: isProduction ? "none" : "lax",
+      secure: isSecureCookie,
+      sameSite: isSecureCookie ? "none" : "lax",
       path: "/",
     });
 

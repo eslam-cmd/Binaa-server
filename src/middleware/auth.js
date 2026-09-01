@@ -17,11 +17,15 @@ async function auth(req, res, next) {
 
     if (!session) {
       // تنظيف الكوكيز الفاسدة
-      const isProduction = process.env.NODE_ENV === "production";
+      const isSecureCookie =
+        process.env.NODE_ENV === "production" ||
+        req.secure ||
+        req.headers["x-forwarded-proto"] === "https";
+
       res.clearCookie("session_token", {
         httpOnly: true,
-        secure: isProduction,
-        sameSite: isProduction ? "none" : "lax",
+        secure: isSecureCookie,
+        sameSite: isSecureCookie ? "none" : "lax",
         path: "/",
       });
       return res.status(401).json({
@@ -73,11 +77,15 @@ async function logout(req, res) {
       await Session.invalidate(sessionToken);
     }
 
-    const isProduction = process.env.NODE_ENV === "production";
+    const isSecureCookie =
+      process.env.NODE_ENV === "production" ||
+      req.secure ||
+      req.headers["x-forwarded-proto"] === "https";
+
     res.clearCookie("session_token", {
       httpOnly: true,
-      secure: isProduction,
-      sameSite: isProduction ? "none" : "lax",
+      secure: isSecureCookie,
+      sameSite: isSecureCookie ? "none" : "lax",
       path: "/",
     });
 
@@ -97,11 +105,15 @@ async function checkAuth(req, res) {
 
     const session = await Session.findByToken(sessionToken);
     if (!session) {
-      const isProduction = process.env.NODE_ENV === "production";
+      const isSecureCookie =
+        process.env.NODE_ENV === "production" ||
+        req.secure ||
+        req.headers["x-forwarded-proto"] === "https";
+
       res.clearCookie("session_token", {
         httpOnly: true,
-        secure: isProduction,
-        sameSite: isProduction ? "none" : "lax",
+        secure: isSecureCookie,
+        sameSite: isSecureCookie ? "none" : "lax",
         path: "/",
       });
       return res.json({ isAuthenticated: false });
@@ -143,7 +155,7 @@ function csrfProtection(req, res, next) {
     "https://binaa-managment.vercel.app",
     "https://binaa-chi.vercel.app",
     "https://binaa-server.vercel.app",
-    "https://my-profile-personal-nextjs.vercel.app"
+    "https://my-profile-personal-nextjs.vercel.app",
   ];
 
   // السماح للطلبات من نفس المصدر فقط
