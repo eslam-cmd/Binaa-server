@@ -113,13 +113,28 @@ async function checkAuth(req, res) {
 
 // حماية ضد هجمات CSRF (التحقق من Origin)
 function csrfProtection(req, res, next) {
+  // استثناء طلبات OPTIONS (preflight)
+  if (req.method === "OPTIONS") {
+    return next();
+  }
+
+  // استثناء طلبات API (تسجيل الدخول، التحقق، إلخ)
+  if (req.path.startsWith("/api/auth/")) {
+    return next();
+  }
+
+  // استثناء طلبات الـ webhooks
+  if (req.path.startsWith("/api/webhooks/")) {
+    return next();
+  }
+
   const origin = req.headers.origin;
   const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(",") || [
     "http://localhost:3000",
     "http://localhost:3001",
     "https://binaa-managment.vercel.app",
     "https://binaa-chi.vercel.app",
-    "https://binaa-server.vercel.app" 
+    "https://binaa-server.vercel.app",
   ];
 
   // السماح للطلبات من نفس المصدر فقط
@@ -134,6 +149,7 @@ function csrfProtection(req, res, next) {
 
   next();
 }
+
 
 // حماية ضد هجمات الـ Brute Force للجلسات
 async function sessionRateLimit(req, res, next) {

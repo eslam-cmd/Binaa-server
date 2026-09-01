@@ -13,7 +13,7 @@ const serviceRoutes = require("./routes/serviceRoutes");
 const visitorRoutes = require("./routes/visitorRoutes");
 
 // =============================================
-// استيراد Middlewares (انتبه: middleware وليس middlewares)
+// استيراد Middlewares
 // =============================================
 const {
   securityHeaders,
@@ -50,6 +50,7 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(",") || [
 app.use(
   cors({
     origin: (origin, callback) => {
+      // السماح للطلبات بدون origin (مثل cURL)
       if (!origin) {
         return callback(null, true);
       }
@@ -91,11 +92,6 @@ app.use(logActivity);
 app.use(rateLimit({ max: 500, windowMs: 60 * 60 * 1000 }));
 
 // =============================================
-// حماية CSRF
-// =============================================
-app.use(csrfProtection);
-
-// =============================================
 // مسار صحي للتحقق (Health Check)
 // =============================================
 app.get("/health", async (req, res) => {
@@ -108,6 +104,7 @@ app.get("/health", async (req, res) => {
       database: "connected",
     });
   } catch (error) {
+    console.error("❌ خطأ في قاعدة البيانات:", error);
     res.status(503).json({
       status: "unhealthy",
       error: "قاعدة البيانات غير متصلة",
@@ -116,13 +113,64 @@ app.get("/health", async (req, res) => {
 });
 
 // =============================================
-// مسارات API
+// مسار اختبار قاعدة البيانات
+// =============================================
+app.get("/test-db", async (req, res) => {
+  try {
+    const result = await pool.query("SELECT NOW()");
+    res.json({
+      success: true,
+      time: result.rows[0].now,
+      message: "✅ قاعدة البيانات متصلة",
+    });
+  } catch (error) {
+    console.error("❌ خطأ في اختبار قاعدة البيانات:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      message: "❌ قاعدة البيانات غير متصلة",
+    });
+  }
+});
+
+// =============================================
+// مسار اختبار الإيميل
+// =============================================
+app.get("/test-email", async (req, res) => {
+  try {
+    const { sendEmail, getOTPEmailTemplate } = require("./lib/email");
+    const result = await sendEmail({
+      to: "hdayaaslam34@gmail.com",
+      subject: "🧪 اختبار الإيميل",
+      html: "<h1>اختبار</h1><p>إذا وصلت هذه الرسالة، الإيميل شغال ✅</p>",
+    });
+    res.json(result);
+  } catch (error) {
+    console.error("❌ خطأ في اختبار الإيميل:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// =============================================
+// مسارات API (توضع قبل CSRF)
 // =============================================
 app.use("/api/auth", authRoutes);
 app.use("/api/posts", postRoutes);
 app.use("/api/requests", requestRoutes);
 app.use("/api/services", serviceRoutes);
 app.use("/api/visitors", visitorRoutes);
+
+// =============================================
+// حماية CSRF (للمسارات التي تحتاجها فقط)
+// =============================================
+app.use((req, res, next) => {
+  // تخطي CSRF لطلبات API
+  if (req.path.startsWith("/api/")) {
+    return next();
+  }
+  // تطبيق CSRF للصفحات الأخرى
+  csrfProtection(req, res, next);
+});
 
 // =============================================
 // مسار إضافي للإحصائيات (Admin فقط)
@@ -173,11 +221,45 @@ app.get("/api/admin/activities", auth, isAdmin, async (req, res) => {
 });
 
 // =============================================
-// مسار جلب الزوار (Admin فقط) - تجنب التكرار
+// مسار أساسي للتحقق من أن السيرفر يعمل
 // =============================================
-// ملاحظة: هذا المسار موجود بالفعل في visitorRoutes
-// لذلك نعلق عليه أو ندمجه مع visitorRoutes
-// app.get("/api/visitors", auth, isAdmin, async (req, res) => { ... });
+app.get("/", (req, res) => {
+  res.json({
+    name: "Binaa API",
+    version: "1.0.0",
+    status: "running",
+    timestamp: new Date().toISOString(),
+    endpoints: {
+      health: "/health",
+      testDb: "/test-db",
+      testEmail: "/test-email",
+      auth: "/api/auth",
+      posts: "/api/posts",
+      requests: "/api/requests",
+      services: "/api/services",
+      visitors: "/api/visitors",
+      admin: "/api/admin",
+    },
+  });
+});
+
+// =============================================
+// مسار API الأساسي
+// =============================================
+app.get("/api", (req, res) => {
+  res.json({
+    message: "Binaa API",
+    version: "1.0.0",
+    endpoints: {
+      auth: "/api/auth",
+      posts: "/api/posts",
+      requests: "/api/requests",
+      services: "/api/services",
+      visitors: "/api/visitors",
+      admin: "/api/admin",
+    },
+  });
+});
 
 // =============================================
 // معالج الأخطاء العالمي (Global Error Handler)
