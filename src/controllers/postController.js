@@ -50,6 +50,19 @@ exports.getPost = async (req, res) => {
   }
 };
 
+function normalizeSlug(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\p{L}\p{N}\s-]/gu, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .substring(0, 200);
+}
+
 // إنشاء مقالة جديدة (Admin فقط)
 exports.createPost = async (req, res) => {
   try {
@@ -70,11 +83,7 @@ exports.createPost = async (req, res) => {
     }
 
     // إنشاء slug تلقائي
-    const slug = title
-      .toLowerCase()
-      .replace(/[^a-zA-Z0-9\u0600-\u06FF\s]/g, "")
-      .replace(/\s+/g, "-")
-      .substring(0, 200);
+    const slug = normalizeSlug(title) || "post";
 
     // التحقق من عدم وجود slug مكرر
     const existingSlug = await pool.query(
