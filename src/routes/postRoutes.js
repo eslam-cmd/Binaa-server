@@ -1,8 +1,8 @@
 const express = require("express");
 const router = express.Router();
 const postController = require("../controllers/postController");
-const { auth, isAdmin } = require("../middlewares/auth");
-const { rateLimit } = require("../middlewares/rateLimit");
+const { auth, isAdmin } = require("../middleware/auth");
+const { rateLimit } = require("../middleware/rateLimit");
 
 // جلب جميع المقالات (عام)
 router.get("/", rateLimit({ max: 200 }), postController.getAllPosts);

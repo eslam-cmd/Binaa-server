@@ -1,8 +1,8 @@
 const express = require("express");
 const router = express.Router();
 const visitorController = require("../controllers/visitorController");
-const { auth, isAdmin } = require("../middlewares/auth");
-const { rateLimit } = require("../middlewares/rateLimit");
+const { auth, isAdmin } = require("../middleware/auth");
+const { rateLimit } = require("../middleware/rateLimit");
 
 // تسجيل زائر جديد (عام - من العميل)
 router.post(

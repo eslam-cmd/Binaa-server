@@ -119,6 +119,7 @@ function csrfProtection(req, res, next) {
     "http://localhost:3001",
     "https://binaa-managment.vercel.app",
     "https://binaa-chi.vercel.app",
+    "https://binaa-server.vercel.app" 
   ];
 
   // السماح للطلبات من نفس المصدر فقط

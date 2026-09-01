@@ -1,8 +1,8 @@
 const express = require("express");
 const router = express.Router();
 const authController = require("../controllers/authController");
-const { loginRateLimit, otpRateLimit } = require("../middlewares/rateLimit");
-const { auth } = require("../middlewares/auth");
+const { loginRateLimit, otpRateLimit } = require("../middleware/rateLimit");
+const { auth } = require("../middleware/auth");
 
 // تسجيل الدخول - الخطوة 1 (إرسال OTP)
 router.post("/login", loginRateLimit(), authController.loginStep1);

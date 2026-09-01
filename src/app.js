@@ -20,16 +20,16 @@ const {
   sanitizeInput,
   preventParameterPollution,
   logActivity,
-} = require("./middlewares/security"); // تم التصحيح
+} = require("./middleware/security");
 
-const { csrfProtection } = require("./middlewares/auth"); // تم التصحيح
-const { rateLimit } = require("./middlewares/rateLimit"); // تم التصحيح
+const { csrfProtection } = require("./middleware/auth");
+const { rateLimit } = require("./middleware/rateLimit");
 
 // =============================================
 // استيراد قاعدة البيانات و Auth
 // =============================================
 const pool = require("./config/database");
-const { auth, isAdmin } = require("./middlewares/auth"); // تم التصحيح
+const { auth, isAdmin } = require("./middleware/auth");
 
 // =============================================
 // تهيئة Express
@@ -41,15 +41,20 @@ const app = express();
 // =============================================
 const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(",") || [
   "http://localhost:3000",
-  "http://localhost:3001", 
+  "http://localhost:3001",
   "https://binaa-managment.vercel.app",
   "https://binaa-chi.vercel.app",
+  "https://binaa-server.vercel.app",
 ];
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      if (allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
         console.warn(`⚠️ محاولة وصول من مصدر غير مسموح: ${origin}`);
@@ -58,7 +63,14 @@ app.use(
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-Requested-With",
+      "Accept",
+    ],
+    exposedHeaders: ["Set-Cookie"],
+    maxAge: 86400,
   }),
 );
 

@@ -1,8 +1,8 @@
 const express = require("express");
 const router = express.Router();
 const requestController = require("../controllers/requestController");
-const { auth, isAdmin } = require("../middlewares/auth");
-const { rateLimit } = require("../middlewares/rateLimit");
+const { auth, isAdmin } = require("../middleware/auth");
+const { rateLimit } = require("../middleware/rateLimit");
 
 // إرسال رمز تحقق للبريد قبل إنشاء الطلب
 router.post(
