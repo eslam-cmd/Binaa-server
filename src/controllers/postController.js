@@ -5,7 +5,7 @@ const { sendTelegramAlert } = require("../lib/telegram");
 exports.getAllPosts = async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, title, slug, excerpt, category, tags, cover_image, 
+      `SELECT id, title, slug, excerpt, content, category, tags, cover_image, 
               author, views, created_at, updated_at 
        FROM posts 
        WHERE status = 'published' 

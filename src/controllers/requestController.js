@@ -3,6 +3,7 @@ const {
   sendEmail,
   getRequestReceivedEmail,
   getRequestStatusEmail,
+  getRequestFollowUpEmail,
   getOTPEmailTemplate,
 } = require("../lib/email");
 const { generateOTP } = require("../lib/crypto");
@@ -123,8 +124,8 @@ exports.getAllRequests = async (req, res) => {
     const offset = (page - 1) * limit;
 
     let query = `
-      SELECT id, name, email, project_type, description, status, 
-             notes, created_at, updated_at 
+      SELECT id, name, email, project_type, description, status,
+             notes, project_end_date, message_history, created_at, updated_at
       FROM requests
     `;
     const params = [];
@@ -167,9 +168,9 @@ exports.getRequest = async (req, res) => {
     const { id } = req.params;
 
     const result = await pool.query(
-      `SELECT id, name, email, project_type, description, status, 
-              notes, created_at, updated_at 
-       FROM requests 
+      `SELECT id, name, email, project_type, description, status,
+              notes, project_end_date, message_history, created_at, updated_at
+       FROM requests
        WHERE id = $1`,
       [id],
     );
@@ -283,7 +284,7 @@ exports.createRequest = async (req, res) => {
 exports.updateRequestStatus = async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, notes } = req.body;
+    const { status, notes, project_end_date, follow_up_message } = req.body;
 
     // التحقق من الحالة
     const validStatuses = ["pending", "accepted", "rejected", "completed"];
@@ -301,15 +302,46 @@ exports.updateRequestStatus = async (req, res) => {
       return res.status(404).json({ error: "الطلب غير موجود" });
     }
 
+    const existing = existingRequest.rows[0];
+    const normalizedProjectEndDate = project_end_date
+      ? new Date(project_end_date).toISOString()
+      : null;
+
+    const rawMessageHistory = Array.isArray(existing.message_history)
+      ? existing.message_history
+      : [];
+
+    const trimmedFollowUpMessage = String(follow_up_message || "").trim();
+    const nextMessageHistory = trimmedFollowUpMessage
+      ? [
+          ...rawMessageHistory,
+          {
+            id: Date.now(),
+            sender: "admin",
+            message: trimmedFollowUpMessage,
+            sent_at: new Date().toISOString(),
+            type: "follow_up",
+          },
+        ]
+      : rawMessageHistory;
+
     // تحديث الحالة
     const result = await pool.query(
-      `UPDATE requests 
-       SET status = $1, 
+      `UPDATE requests
+       SET status = $1,
            notes = COALESCE($2, notes),
+           project_end_date = CASE WHEN $4::text IS NULL OR $4::text = '' THEN project_end_date ELSE $4::timestamptz END,
+           message_history = $5::jsonb,
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $3
        RETURNING *`,
-      [status, notes, id],
+      [
+        status,
+        notes || null,
+        id,
+        normalizedProjectEndDate,
+        JSON.stringify(nextMessageHistory),
+      ],
     );
 
     const updatedRequest = result.rows[0];
@@ -328,7 +360,10 @@ exports.updateRequestStatus = async (req, res) => {
         `👤 العميل: ${updatedRequest.name}\n` +
         `📧 البريد: ${updatedRequest.email}\n` +
         `📊 الحالة: ${statusEmojis[status]} ${status}\n` +
-        (notes ? `📝 ملاحظات: ${notes}` : ""),
+        (notes ? `📝 ملاحظات: ${notes}` : "") +
+        (trimmedFollowUpMessage
+          ? `\n📨 رسالة متابعة: ${trimmedFollowUpMessage}`
+          : ""),
     ).catch(console.error);
 
     // إرسال إيميل للعميل
@@ -337,6 +372,14 @@ exports.updateRequestStatus = async (req, res) => {
       subject: `📋 تحديث حالة طلبك #${updatedRequest.id}`,
       html: getRequestStatusEmail(updatedRequest),
     }).catch(console.error);
+
+    if (trimmedFollowUpMessage) {
+      await sendEmail({
+        to: updatedRequest.email,
+        subject: `📨 رسالة متابعة لطلبك #${updatedRequest.id}`,
+        html: getRequestFollowUpEmail(updatedRequest, trimmedFollowUpMessage),
+      }).catch(console.error);
+    }
 
     // تسجيل النشاط
     await pool.query(
@@ -347,13 +390,21 @@ exports.updateRequestStatus = async (req, res) => {
         "update_request_status",
         req.ip,
         req.headers["user-agent"],
-        JSON.stringify({ requestId: id, status, notes }),
+        JSON.stringify({
+          requestId: id,
+          status,
+          notes,
+          project_end_date: normalizedProjectEndDate,
+          follow_up_message: trimmedFollowUpMessage,
+        }),
       ],
     );
 
     res.json({
       success: true,
-      message: "تم تحديث حالة الطلب بنجاح",
+      message: trimmedFollowUpMessage
+        ? "تم تحديث تفاصيل الطلب وإرسال الرسالة بنجاح"
+        : "تم تحديث حالة الطلب بنجاح",
       request: updatedRequest,
     });
   } catch (error) {

@@ -180,6 +180,10 @@ function getRequestStatusEmail(request) {
     completed: "#3b82f6",
   };
 
+  const projectEndDate = request.project_end_date
+    ? new Date(request.project_end_date).toLocaleDateString("ar-EG")
+    : null;
+
   return `
     <!DOCTYPE html>
     <html dir="rtl">
@@ -201,6 +205,18 @@ function getRequestStatusEmail(request) {
             ${statusMessages[request.status] || "تم تحديث حالة طلبك"}
           </p>
         </div>
+
+        ${
+          projectEndDate
+            ? `
+          <div style="background: #ecfeff; border-radius: 12px; padding: 15px; margin: 20px 0; border-right: 4px solid #06b6d4;">
+            <p style="color: #0f172a; font-size: 14px; margin: 0;">
+              <strong>📅 تاريخ نهاية المشروع:</strong> ${projectEndDate}
+            </p>
+          </div>
+        `
+            : ""
+        }
         
         ${
           request.notes
@@ -225,10 +241,44 @@ function getRequestStatusEmail(request) {
   `;
 }
 
+function getRequestFollowUpEmail(request, message) {
+  return `
+    <!DOCTYPE html>
+    <html dir="rtl">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>رسالة متابعة</title>
+    </head>
+    <body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; direction: rtl; background: #f5f5f5; padding: 40px 20px;">
+      <div style="max-width: 500px; margin: 0 auto; background: white; border-radius: 16px; padding: 40px; box-shadow: 0 4px 20px rgba(0,0,0,0.1);">
+        <div style="text-align: center; margin-bottom: 30px;">
+          <span style="font-size: 48px;">✉️</span>
+          <h1 style="color: #1f2937; font-size: 24px; margin: 10px 0 5px;">رسالة متابعة</h1>
+          <p style="color: #6b7280; font-size: 14px;">رقم الطلب: #${request.id}</p>
+        </div>
+
+        <div style="background: #f3f4f6; border-radius: 12px; padding: 20px; margin-bottom: 20px;">
+          <p style="color: #374151; font-size: 14px; line-height: 1.8; margin: 0; white-space: pre-line;">
+            ${message}
+          </p>
+        </div>
+
+        <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;">
+        <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 0;">
+          هذا إيميل آلي، يرجى عدم الرد عليه.
+        </p>
+      </div>
+    </body>
+    </html>
+  `;
+}
+
 module.exports = {
   sendEmail,
   getOTPEmailTemplate,
   getLoginAlertEmailTemplate,
   getRequestReceivedEmail,
   getRequestStatusEmail,
+  getRequestFollowUpEmail,
 };

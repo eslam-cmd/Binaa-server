@@ -36,6 +36,21 @@ const { auth, isAdmin } = require("./middleware/auth");
 // =============================================
 const app = express();
 
+async function ensureRequestColumns() {
+  try {
+    await pool.query(`
+      ALTER TABLE requests
+        ADD COLUMN IF NOT EXISTS project_end_date TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS message_history JSONB DEFAULT '[]'::jsonb;
+    `);
+    console.log("✅ تم التأكد من أعمدة الطلبات الإضافية");
+  } catch (error) {
+    console.error("⚠️ فشل التحقق من أعمدة الطلبات:", error.message);
+  }
+}
+
+ensureRequestColumns();
+
 // =============================================
 // إعدادات CORS
 // =============================================
