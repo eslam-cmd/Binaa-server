@@ -1,34 +1,35 @@
-# Backend Documentation
+# Freelance Platform — Backend API
 
-## نظرة عامة
+[![Node.js](https://img.shields.io/badge/Node.js-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org)
+[![Express.js](https://img.shields.io/badge/Express.js-000000?logo=express&logoColor=white)](https://expressjs.com)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org)
+[![JWT](https://img.shields.io/badge/JWT-000000?logo=jsonwebtokens&logoColor=white)](https://jwt.io)
 
-هذا المشروع هو الـ Backend الخاص بمنصة العمل الحر/الاستشارات، ويعمل على Node.js + Express.js مع PostgreSQL. الهدف الرئيسي هو تقديم API موثوق لدعم:
+A secure and reliable REST API built with Node.js and Express.js, powering a freelance/consulting platform with OTP-based admin authentication, content management, service listings, request handling, and an administrative dashboard.
 
-- تسجيل دخول المدير عبر OTP
-- إدارة المقالات
-- إدارة الخدمات
-- إدارة الطلبات
-- قراءة إحصائيات لوحة التحكم
-- تسجيل النشاطات والأنشطة الإدارية
-- حماية الطلبات عبر CORS و Helmet و rate limit
+---
 
-## التقنية المستخدمة
+## 🛠️ Tech Stack
 
-- Node.js
-- Express.js
-- PostgreSQL
-- pg (PostgreSQL client)
-- cookie-parser
-- cors
-- helmet
-- express-rate-limit
-- bcryptjs
-- jsonwebtoken
-- nodemailer
+| Technology | Purpose |
+| :--- | :--- |
+| **Node.js** | Runtime environment |
+| **Express.js** | Web framework |
+| **PostgreSQL** | Relational database |
+| **pg** | PostgreSQL client |
+| **bcryptjs** | Password hashing |
+| **jsonwebtoken** | JWT authentication |
+| **nodemailer** | Email / OTP delivery |
+| **helmet** | HTTP security headers |
+| **cors** | Cross-origin resource sharing |
+| **express-rate-limit** | API rate limiting |
+| **cookie-parser** | Cookie management |
 
-## هيكل المشروع
+---
 
-```bash
+## 📁 Project Structure
+
+```text
 server/
 ├── src/
 │   ├── app.js
@@ -60,40 +61,36 @@ server/
 │   │   ├── postRoutes.js
 │   │   ├── requestRoutes.js
 │   │   └── serviceRoutes.js
-│   ├── utils/
-│   │   ├── helpers.js
-│   │   └── validators.js
-│   └── README.MD
+│   └── utils/
+│       ├── helpers.js
+│       └── validators.js
 ├── package.json
-├── README.md
-└── .env
+└── README.md
 ```
 
-## نقطة التشغيل
+---
 
-الـ entry point هو:
+## 🚀 Getting Started
 
-```bash
-server/src/server.js
-```
+### Prerequisites
 
-والـ app الرئيسي هو:
+- Node.js >= 18
+- PostgreSQL instance (local or cloud)
 
-```bash
-server/src/app.js
-```
-
-## التشغيل المحلي
-
-1. تثبيت الحزم
+### Installation
 
 ```bash
+# Clone the repository
+git clone https://github.com/eslam-cmd/freelance-server.git
 cd server
+
+# Install dependencies
 npm install
 ```
 
-2. إعداد المتغيرات البيئية
-   أنشئ ملف `.env` داخل مجلد `server/` يحتوي على:
+### Environment Configuration
+
+Create a `.env` file inside the `server/` directory:
 
 ```env
 PORT=5001
@@ -106,27 +103,23 @@ ALLOWED_ORIGINS=http://localhost:3000,http://localhost:3001
 NODE_ENV=development
 ```
 
-3. تشغيل السيرفر
+### Run the Server
 
 ```bash
+# Development
 npm run dev
-```
 
-أو:
-
-```bash
+# Production
 npm start
 ```
 
-## التحقق من حالة السيرفر
-
-يمكنك التحقق من أن السيرفر يعمل:
+### Health Check
 
 ```bash
 curl http://localhost:5001/health
 ```
 
-القيمة المتوقعة:
+Expected response:
 
 ```json
 {
@@ -135,19 +128,17 @@ curl http://localhost:5001/health
 }
 ```
 
-## نظام المصادقة
+---
 
-النظام الحالي يعتمد على الجلسة عبر الكوكيز (cookies) وليس JWT في الـ frontend مباشرة.
+## 🔐 Authentication Flow
 
-### 1) تسجيل الدخول - الخطوة الأولى
+Authentication uses session-based cookies with OTP verification.
 
-مسار:
+### Step 1 — Login
 
 ```http
 POST /api/auth/login
 ```
-
-الطلب:
 
 ```json
 {
@@ -156,7 +147,7 @@ POST /api/auth/login
 }
 ```
 
-الاستجابة:
+Response:
 
 ```json
 {
@@ -166,15 +157,11 @@ POST /api/auth/login
 }
 ```
 
-### 2) التحقق من OTP
-
-مسار:
+### Step 2 — Verify OTP
 
 ```http
 POST /api/auth/verify
 ```
-
-الطلب:
 
 ```json
 {
@@ -183,15 +170,13 @@ POST /api/auth/verify
 }
 ```
 
-### 3) التحقق من الجلسة
-
-مسار:
+### Step 3 — Check Session
 
 ```http
 GET /api/auth/session
 ```
 
-إرجاع:
+Response:
 
 ```json
 {
@@ -203,176 +188,133 @@ GET /api/auth/session
 }
 ```
 
-### 4) تسجيل الخروج
-
-مسار:
+### Step 4 — Logout
 
 ```http
 POST /api/auth/logout
 ```
 
-## مسارات الـ API
+---
 
-### 1) المصادقة
+## 🗺️ API Endpoints
 
-| الطريقة | المسار            | الوصف                              |
-| ------- | ----------------- | ---------------------------------- |
-| POST    | /api/auth/login   | إرسال بيانات تسجيل الدخول وطلب OTP |
-| POST    | /api/auth/verify  | التحقق من رمز OTP                  |
-| GET     | /api/auth/session | التحقق من الجلسة الحالية           |
-| POST    | /api/auth/logout  | تسجيل الخروج                       |
+### Authentication
 
-### 2) المقالات
+| Method | Route | Description |
+| :--- | :--- | :--- |
+| POST | `/api/auth/login` | Submit credentials & request OTP |
+| POST | `/api/auth/verify` | Verify OTP code |
+| GET | `/api/auth/session` | Check current session |
+| POST | `/api/auth/logout` | Logout |
 
-| الطريقة | المسار         | الوصف                       |
-| ------- | -------------- | --------------------------- |
-| GET     | /api/posts     | جلب كل المقالات             |
-| GET     | /api/posts/:id | جلب مقال واحد               |
-| POST    | /api/posts     | إنشاء مقال جديد (Admin فقط) |
-| PUT     | /api/posts/:id | تحديث مقال (Admin فقط)      |
-| DELETE  | /api/posts/:id | حذف مقال (Admin فقط)        |
+### Posts
 
-### 3) الطلبات
+| Method | Route | Description |
+| :--- | :--- | :--- |
+| GET | `/api/posts` | Get all posts |
+| GET | `/api/posts/:id` | Get single post |
+| POST | `/api/posts` | Create post (Admin only) |
+| PUT | `/api/posts/:id` | Update post (Admin only) |
+| DELETE | `/api/posts/:id` | Delete post (Admin only) |
 
-| الطريقة | المسار                   | الوصف                      |
-| ------- | ------------------------ | -------------------------- |
-| GET     | /api/requests            | جلب كل الطلبات (Admin فقط) |
-| GET     | /api/requests/:id        | جلب طلب واحد               |
-| POST    | /api/requests            | إنشاء طلب جديد من العميل   |
-| PUT     | /api/requests/:id/status | تحديث حالة الطلب           |
+### Requests
 
-### 4) الخدمات
+| Method | Route | Description |
+| :--- | :--- | :--- |
+| GET | `/api/requests` | Get all requests (Admin only) |
+| GET | `/api/requests/:id` | Get single request |
+| POST | `/api/requests` | Submit new client request |
+| PUT | `/api/requests/:id/status` | Update request status |
 
-| الطريقة | المسار            | الوصف                        |
-| ------- | ----------------- | ---------------------------- |
-| GET     | /api/services     | جلب كل الخدمات               |
-| GET     | /api/services/:id | جلب خدمة واحدة               |
-| POST    | /api/services     | إنشاء خدمة جديدة (Admin فقط) |
-| PUT     | /api/services/:id | تحديث خدمة (Admin فقط)       |
-| DELETE  | /api/services/:id | حذف خدمة (Admin فقط)         |
+### Services
 
-### 5) لوحة التحكم
+| Method | Route | Description |
+| :--- | :--- | :--- |
+| GET | `/api/services` | Get all services |
+| GET | `/api/services/:id` | Get single service |
+| POST | `/api/services` | Create service (Admin only) |
+| PUT | `/api/services/:id` | Update service (Admin only) |
+| DELETE | `/api/services/:id` | Delete service (Admin only) |
 
-| الطريقة | المسار                | الوصف                |
-| ------- | --------------------- | -------------------- |
-| GET     | /api/admin/stats      | إحصائيات لوحة التحكم |
-| GET     | /api/admin/activities | سجل النشاطات         |
-| GET     | /api/visitors         | قائمة الزوار         |
+### Admin Dashboard
 
-## مديرية الطلبات والأمان
+| Method | Route | Description |
+| :--- | :--- | :--- |
+| GET | `/api/admin/stats` | Dashboard statistics |
+| GET | `/api/admin/activities` | Activity log |
+| GET | `/api/visitors` | Visitor list |
 
-### CORS
+---
 
-تم ضبط الـ CORS للسماح بمصادر محددة فقط، مع دعم الكوكيز:
+## 🔒 Security
 
+**CORS**
+Configured to allow specific origins only with cookie support:
 ```js
-credentials: true;
+credentials: true
 ```
 
-### Rate limiting
+**Rate Limiting**
+Applied to:
+- Login endpoint
+- Request creation
+- Public post and service access
 
-توجد حماية للـ API عبر `rateLimit` على:
+**Helmet & Input Sanitization**
+- HTTP security headers via Helmet
+- Input sanitization on all routes
+- Parameter pollution prevention
+- Full activity logging
 
-- تسجيل الدخول
-- إنشاء طلبات
-- الوصول إلى المقالات/الطلبات العامة
-
-### Helmet and security
-
-يتم تطبيق:
-
-- رؤوس الأمان
-- تنظيف الإدخالات
-- منع parameter pollution
-- تسجيل النشاطات
-
-## قاعدة البيانات
-
-يمت استخدام PostgreSQL، وهي مرتبطة عبر متغير:
-
-```env
-DATABASE_URL
-```
-
-ومن الملف:
-
-```bash
-server/src/config/database.js
-```
-
-يتم إنشاء الـ pool واستخدامه داخل كل controller.
-
-## سجل النشاطات
-
-كل إجراء إداري (مثل إنشاء خدمة أو تحديثها أو حذفها أو إنشاء طلب) يتم تسجيله في جدول `activity_logs` داخل قاعدة البيانات.
-
-هذا مهم لأن لوحة التحكم تستفيد من هذه البيانات في:
-
-- الإشعارات
-- سجل النشاطات
-- لوحة التحكم الإحصائية
-
-## الأخطاء الشائعة
-
-### 1) خطأ قاعدة البيانات
-
-إذا ظهر:
-
-```text
-database disconnected
-```
-
-فاحقق:
-
-- وجود `DATABASE_URL`
-- صحة اسم المستخدم/كلمة المرور
-- صحة عنوان قاعدة البيانات
-
-### 2) خطأ 401 أو 403
-
-ممكن يكون السبب أن الـ route محمي بـ `auth` أو `isAdmin` وعندها تحتاج جلسة صالحة.
-
-### 3) CORS error
-
-تحقق من:
-
-- `ALLOWED_ORIGINS`
-- وجود `credentials: true`
-- أن frontend يعمل على localhost الصحيح
-
-## أفضل الممارسات
-
-- لا تستخدم القيم الثابتة للـ admin داخل frontend
-- لا تضع كلمات المرور أو OTP داخل الـ URL
-- استخدم cookies أو sessions للاستخدام الإداري
-- حافظ على تسجيل النشاطات لكل عملية مهمة
-
-## ملاحظات تشغيلية
-
-- السيرفر يعمل غالبًا على `http://localhost:5001`
-- تم تجهيز العديد من الـ endpoints للوصول من frontend عبر `/api/...`
-- يجب أن يكون الـ frontend يرسل الطلبات مع `credentials: "include"` لتعمل الجلسات
-
-## مثال استخدام fetch من frontend
-
+**Frontend Fetch Example**
 ```js
 const res = await fetch("http://localhost:5001/api/services", {
   method: "GET",
   credentials: "include",
 });
-
 const data = await res.json();
-console.log(data);
 ```
 
-## الخلاصة
+---
 
-هذا الـ backend مسؤول عن:
+## 🗄️ Database
 
-- إدارة المنصة
-- حماية البيانات
-- توفير APIs للـ frontend
-- تسجيل كل النشاطات المهمة
-- دعم لوحة التحكم الإدارية
+PostgreSQL connected via:
 
-إذا كنت تريد، يمكنني في الخطوة التالية إضافة ملف إضافي داخل السيرفر باسم `API_REFERENCE.md` يحتوي جدول كامل لكل endpoint مع sample requests و responses.
+```env
+DATABASE_URL
+```
+
+Connection pool managed in `src/config/database.js` and used across all controllers.
+
+Every admin action (create, update, delete service or request) is logged to the `activity_logs` table, powering the dashboard notifications, activity feed, and statistics.
+
+---
+
+## ⚠️ Common Errors
+
+**Database disconnected**
+```text
+database disconnected
+```
+Check `DATABASE_URL`, credentials, and host address.
+
+**401 / 403 Unauthorized**
+The route requires a valid session. Ensure the user is authenticated.
+
+**CORS Error**
+Verify `ALLOWED_ORIGINS`, `credentials: true`, and that the frontend runs on the correct localhost port.
+
+---
+
+## 📬 Contact
+
+Built by **Islam Hadaya**
+
+- Portfolio: [my-profile-personal-nextjs.vercel.app](https://my-profile-personal-nextjs.vercel.app)
+- LinkedIn: [linkedin.com/in/islam-hadaya](https://linkedin.com/in/islam-hadaya)
+- Email: [hdayaaslam34@gmail.com](mailto:hdayaaslam34@gmail.com)
+
+---
+
+*Last Updated: September 2026*
