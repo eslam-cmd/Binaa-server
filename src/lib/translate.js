@@ -133,37 +133,15 @@ ${JSON.stringify(input)}`,
 
     return translations;
   } catch (error) {
-    if (error.translationError) throw error;
-
-    console.error("AI translation error detail:", {
+    // 1. نطبع كامل تفاصيل الخطأ الحقيقي لنعرف ماذا يقول سيرفر Gemini بالضبط في Vercel
+    console.error("AI Translation skipped due to error:", {
       status: error.status,
-      message: error.message,
-      stack: error.stack,
+      message: error.message || error,
+      code: error.code,
     });
 
-    const message = String(error.message || error);
-    if (
-      /user location is not supported|location.*not supported/i.test(message)
-    ) {
-      throw createTranslationError(
-        "رفضت Gemini الطلب لأن موقع الخادم غير مدعوم. يجب تشغيل الخادم في منطقة تدعم Gemini. لم يتم حفظ التعديل أو نشر المقالة.",
-        503,
-        "REGION_RESTRICTED",
-      );
-    }
-
-    const isTemporarilyUnavailable =
-      error.status === 503 ||
-      error.status === 429 ||
-      /high demand|temporarily unavailable/i.test(message);
-
-    throw createTranslationError(
-      isTemporarilyUnavailable
-        ? "خدمة Gemini مشغولة أو غير متاحة مؤقتاً من الخادم. يرجى المحاولة لاحقاً."
-        : "فشلت ترجمة المقالة من قِبل الخدمة. يرجى المحاولة مرة أخرى.",
-      isTemporarilyUnavailable ? 503 : 502,
-      isTemporarilyUnavailable ? "SERVICE_BUSY" : "TRANSLATION_FAILED",
-    );
+    // 2. نرجع كائن فارغ مباشرة لينتهي الأمر وتُنشر المقالة بالعربية بنجاح 200/201 دون أي توقف
+    return {};
   }
 }
 
