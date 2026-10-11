@@ -78,7 +78,7 @@ async function generateTranslations({
   try {
     const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-2.0-flash",
       contents: `You are an expert technical translator. Translate this Arabic technical blog post into English (en), German (de), Persian/Farsi (fa), and Russian (ru).
 
 Return ONLY a valid JSON object with exactly these top-level keys: en, de, fa, ru.
