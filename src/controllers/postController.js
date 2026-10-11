@@ -1,21 +1,75 @@
 const pool = require("../config/database");
 const { sendTelegramAlert } = require("../lib/telegram");
+const {
+  generateTranslations,
+  getTranslationStatus,
+  hasAllTranslations,
+} = require("../lib/translate");
 
-// جلب جميع المقالات
+const SUPPORTED_TRANSLATION_LOCALES = new Set(["en", "de", "fa", "ru"]);
+
+function localizePost(post, locale) {
+  if (!locale || locale === "ar") return post;
+
+  const translation = post.translations?.[locale];
+  if (!translation) {
+    return { ...post, translationAvailable: false };
+  }
+  const isComplete =
+    typeof translation.title === "string" &&
+    typeof translation.excerpt === "string" &&
+    typeof translation.content === "string" &&
+    typeof translation.category === "string" &&
+    typeof translation.author === "string" &&
+    Array.isArray(translation.tags) &&
+    translation.tags.every((tag) => typeof tag === "string");
+  if (!isComplete) {
+    return { ...post, translationAvailable: false };
+  }
+
+  return {
+    ...post,
+    title: translation.title || post.title,
+    excerpt: translation.excerpt ?? post.excerpt,
+    content: translation.content || post.content,
+    category: translation.category || post.category,
+    tags: Array.isArray(translation.tags) ? translation.tags : post.tags,
+    author: translation.author || post.author,
+    translationAvailable: true,
+  };
+}
+
+// جلب جميع المقالات (مع دعم استعلام اللغة ?lang=en)
 exports.getAllPosts = async (req, res) => {
   try {
+    const requestedLanguage = String(req.query.lang || "ar");
+    if (
+      requestedLanguage !== "ar" &&
+      !SUPPORTED_TRANSLATION_LOCALES.has(requestedLanguage)
+    ) {
+      return res.status(400).json({ error: "اللغة المطلوبة غير مدعومة" });
+    }
+
     const result = await pool.query(
       `SELECT id, title, slug, excerpt, content, category, tags, cover_image, 
-              author, views, created_at, updated_at 
+              author, views, translations, created_at, updated_at 
        FROM posts 
        WHERE status = 'published' 
        ORDER BY created_at DESC`,
     );
 
+    const posts = result.rows.map((post) => {
+      const localizedPost = localizePost(post, requestedLanguage);
+      const publicPost = { ...localizedPost };
+      Object.assign(publicPost, getTranslationStatus(post.translations));
+      delete publicPost.translations;
+      return publicPost;
+    });
+
     res.json({
       success: true,
-      count: result.rows.length,
-      posts: result.rows,
+      count: posts.length,
+      posts,
     });
   } catch (error) {
     console.error("خطأ في جلب المقالات:", error);
@@ -23,17 +77,24 @@ exports.getAllPosts = async (req, res) => {
   }
 };
 
-// جلب مقالة واحدة
+// جلب مقالة واحدة (مع دعم اللغة ?lang=en أو ru أو de)
 exports.getPost = async (req, res) => {
   try {
     const { id } = req.params;
+    const requestedLanguage = String(req.query.lang || "ar");
+    if (
+      requestedLanguage !== "ar" &&
+      !SUPPORTED_TRANSLATION_LOCALES.has(requestedLanguage)
+    ) {
+      return res.status(400).json({ error: "اللغة المطلوبة غير مدعومة" });
+    }
 
     // زيادة عدد المشاهدات
     await pool.query("UPDATE posts SET views = views + 1 WHERE id = $1", [id]);
 
     const result = await pool.query(
       `SELECT id, title, slug, excerpt, content, category, tags, 
-              cover_image, author, views, status, created_at, updated_at 
+              cover_image, author, views, status, translations, created_at, updated_at 
        FROM posts 
        WHERE id = $1 AND status = 'published'`,
       [id],
@@ -43,7 +104,9 @@ exports.getPost = async (req, res) => {
       return res.status(404).json({ error: "المقالة غير موجودة" });
     }
 
-    res.json({ post: result.rows[0] });
+    const post = localizePost(result.rows[0], requestedLanguage);
+
+    res.json({ post });
   } catch (error) {
     console.error("خطأ في جلب المقالة:", error);
     res.status(500).json({ error: "حدث خطأ في جلب المقالة" });
@@ -77,15 +140,12 @@ exports.createPost = async (req, res) => {
       status,
     } = req.body;
 
-    // التحقق من البيانات المطلوبة
     if (!title || !content) {
       return res.status(400).json({ error: "العنوان والمحتوى مطلوبان" });
     }
 
-    // إنشاء slug تلقائي
     const slug = normalizeSlug(title) || "post";
 
-    // التحقق من عدم وجود slug مكرر
     const existingSlug = await pool.query(
       "SELECT id FROM posts WHERE slug = $1",
       [slug],
@@ -96,22 +156,42 @@ exports.createPost = async (req, res) => {
       finalSlug = `${slug}-${Date.now().toString().slice(-6)}`;
     }
 
+    const finalExcerpt = excerpt || content.substring(0, 200);
+    const normalizedCategory = category || "غير مصنف";
+    const normalizedTags = Array.isArray(tags) ? tags : [];
+    const normalizedAuthor = author || "إسلام هداية";
+    const publishedStatus = status || "published";
+
+    // Translate before publishing so the database always has every locale.
+    const translations =
+      publishedStatus === "published"
+        ? await generateTranslations({
+            title,
+            excerpt: finalExcerpt,
+            content,
+            category: normalizedCategory,
+            tags: normalizedTags,
+            author: normalizedAuthor,
+          })
+        : {};
+
     const result = await pool.query(
       `INSERT INTO posts (
         title, slug, excerpt, content, category, tags, 
-        cover_image, author, status
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        cover_image, author, status, translations
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
       RETURNING *`,
       [
         title,
         finalSlug,
-        excerpt || content.substring(0, 200),
+        finalExcerpt,
         content,
-        category || "غير مصنف",
-        tags || [],
+        normalizedCategory,
+        normalizedTags,
         coverImage || null,
-        author || "إسلام هداية",
-        status || "published",
+        normalizedAuthor,
+        publishedStatus,
+        JSON.stringify(translations),
       ],
     );
 
@@ -119,7 +199,7 @@ exports.createPost = async (req, res) => {
 
     // إرسال إشعار Telegram
     await sendTelegramAlert(
-      `📝 **مقالة جديدة**\n` +
+      `📝 **مقالة جديدة (متعددة اللغات)**\n` +
         `العنوان: ${newPost.title}\n` +
         `التصنيف: ${newPost.category}\n` +
         `الكاتب: ${newPost.author}\n` +
@@ -141,11 +221,22 @@ exports.createPost = async (req, res) => {
 
     res.status(201).json({
       success: true,
-      message: "تم إنشاء المقالة بنجاح",
+      message:
+        publishedStatus === "published"
+          ? "تم إنشاء المقالة وترجمتها إلى اللغات الأربع بنجاح"
+          : "تم حفظ المسودة",
       post: newPost,
+      ...getTranslationStatus(newPost.translations),
     });
   } catch (error) {
     console.error("خطأ في إنشاء المقالة:", error);
+    if (error.translationError) {
+      return res.status(error.statusCode || 502).json({
+        error: error.message,
+        translationError: true,
+        code: error.code,
+      });
+    }
     res.status(500).json({ error: "حدث خطأ في إنشاء المقالة" });
   }
 };
@@ -163,9 +254,9 @@ exports.updatePost = async (req, res) => {
       coverImage,
       author,
       status,
+      regenerateTranslations, // خيار إضافي: true إذا أردت إعادة توليد الترجمات بعد تعديل النص العربي
     } = req.body;
 
-    // التحقق من وجود المقالة
     const existingPost = await pool.query("SELECT * FROM posts WHERE id = $1", [
       id,
     ]);
@@ -174,12 +265,12 @@ exports.updatePost = async (req, res) => {
       return res.status(404).json({ error: "المقالة غير موجودة" });
     }
 
-    // بناء جملة التحديث
+    const currentPost = existingPost.rows[0];
     const updates = [];
     const values = [];
     let paramCount = 1;
 
-    if (title) {
+    if (title !== undefined) {
       updates.push(`title = $${paramCount++}`);
       values.push(title);
     }
@@ -187,15 +278,15 @@ exports.updatePost = async (req, res) => {
       updates.push(`excerpt = $${paramCount++}`);
       values.push(excerpt);
     }
-    if (content) {
+    if (content !== undefined) {
       updates.push(`content = $${paramCount++}`);
       values.push(content);
     }
-    if (category) {
+    if (category !== undefined) {
       updates.push(`category = $${paramCount++}`);
       values.push(category);
     }
-    if (tags) {
+    if (tags !== undefined) {
       updates.push(`tags = $${paramCount++}`);
       values.push(tags);
     }
@@ -203,7 +294,7 @@ exports.updatePost = async (req, res) => {
       updates.push(`cover_image = $${paramCount++}`);
       values.push(coverImage);
     }
-    if (author) {
+    if (author !== undefined) {
       updates.push(`author = $${paramCount++}`);
       values.push(author);
     }
@@ -212,37 +303,94 @@ exports.updatePost = async (req, res) => {
       values.push(status);
     }
 
+    const translationSourceChanged =
+      (title !== undefined && title !== currentPost.title) ||
+      (excerpt !== undefined && excerpt !== currentPost.excerpt) ||
+      (content !== undefined && content !== currentPost.content) ||
+      (category !== undefined && category !== currentPost.category) ||
+      (author !== undefined && author !== currentPost.author) ||
+      (tags !== undefined &&
+        JSON.stringify(tags) !== JSON.stringify(currentPost.tags));
+    const nextStatus = status || currentPost.status;
+    const shouldGenerateTranslations =
+      nextStatus === "published" &&
+      (regenerateTranslations ||
+        translationSourceChanged ||
+        !hasAllTranslations(currentPost.translations));
+
+    if (shouldGenerateTranslations) {
+      const newTranslations = await generateTranslations({
+        title: title ?? currentPost.title,
+        excerpt: excerpt !== undefined ? excerpt : currentPost.excerpt,
+        content: content ?? currentPost.content,
+        category: category ?? currentPost.category,
+        tags: tags ?? currentPost.tags,
+        author: author ?? currentPost.author,
+      });
+      updates.push(`translations = $${paramCount++}::jsonb`);
+      values.push(JSON.stringify(newTranslations));
+    }
+
     updates.push(`updated_at = CURRENT_TIMESTAMP`);
     values.push(id);
 
-    const result = await pool.query(
-      `UPDATE posts 
-       SET ${updates.join(", ")} 
-       WHERE id = $${paramCount}
-       RETURNING *`,
-      values,
-    );
+    const client = await pool.connect();
+    let result;
+    try {
+      await client.query("BEGIN");
+      result = await client.query(
+        `UPDATE posts
+         SET ${updates.join(", ")}
+         WHERE id = $${paramCount}
+         RETURNING *`,
+        values,
+      );
 
-    // تسجيل النشاط
-    await pool.query(
-      `INSERT INTO activity_logs (user_id, action, ip_address, user_agent, details)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [
-        req.user.id,
-        "update_post",
-        req.ip,
-        req.headers["user-agent"],
-        JSON.stringify({ postId: id }),
-      ],
-    );
+      if (result.rows.length === 0) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ error: "المقالة غير موجودة" });
+      }
+
+      if (shouldGenerateTranslations && !hasAllTranslations(result.rows[0].translations)) {
+        throw new Error("لم يتم حفظ الترجمات كاملة في قاعدة البيانات");
+      }
+
+      await client.query(
+        `INSERT INTO activity_logs (user_id, action, ip_address, user_agent, details)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [
+          req.user.id,
+          "update_post",
+          req.ip,
+          req.headers["user-agent"],
+          JSON.stringify({ postId: id }),
+        ],
+      );
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK").catch((rollbackError) => {
+        console.error("خطأ في التراجع عن تحديث المقالة:", rollbackError);
+      });
+      throw error;
+    } finally {
+      client.release();
+    }
 
     res.json({
       success: true,
       message: "تم تحديث المقالة بنجاح",
       post: result.rows[0],
+      ...getTranslationStatus(result.rows[0].translations),
     });
   } catch (error) {
     console.error("خطأ في تحديث المقالة:", error);
+    if (error.translationError) {
+      return res.status(error.statusCode || 502).json({
+        error: error.message,
+        translationError: true,
+        code: error.code,
+      });
+    }
     res.status(500).json({ error: "حدث خطأ في تحديث المقالة" });
   }
 };
@@ -261,7 +409,6 @@ exports.deletePost = async (req, res) => {
       return res.status(404).json({ error: "المقالة غير موجودة" });
     }
 
-    // تسجيل النشاط
     await pool.query(
       `INSERT INTO activity_logs (user_id, action, ip_address, user_agent, details)
        VALUES ($1, $2, $3, $4, $5)`,

@@ -1,67 +1,49 @@
-const { Pool } = require("pg");
+require("dotenv").config();
+
 const bcrypt = require("bcryptjs");
+const pool = require("../src/config/database");
 
-const pool = new Pool({
-  host: "ep-round-butterfly-aemmbpvt.c-2.us-east-2.aws.neon.tech",
-  port: 5432,
-  database: "neondb",
-  user: "neondb_owner",
-  password: "npg_EGAHMw8Ssi4u",
-  ssl: {
-    rejectUnauthorized: false,
-  },
-});
+async function resetPassword() {
+  const email = process.env.RESET_PASSWORD_EMAIL?.trim();
+  const newPassword = process.env.RESET_PASSWORD;
 
-async function forceReset() {
-  try {
-    await pool.connect();
-    console.log("✅ تم الاتصال بقاعدة البيانات");
-
-    const email = "eslam@gmail.com";
-    const newPassword = "eslam000";
-
-    // تشفير كلمة المرور
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
-
-    // تحديث كلمة المرور
-    const result = await pool.query(
-      `UPDATE users 
-       SET password = $1, 
-           failed_attempts = 0, 
-           locked_until = NULL 
-       WHERE email = $2 
-       RETURNING id, email, role`,
-      [hashedPassword, email],
+  if (!email || !newPassword) {
+    throw new Error(
+      "Set RESET_PASSWORD_EMAIL and RESET_PASSWORD before running this script.",
     );
-
-    if (result.rows.length > 0) {
-      console.log("✅ تم تحديث كلمة المرور بنجاح");
-      console.log(`   البريد: ${email}`);
-      console.log(`   كلمة المرور الجديدة: ${newPassword}`);
-
-      // التحقق من التشفير
-      const check = await bcrypt.compare(newPassword, result.rows[0].password);
-      console.log(`   التحقق: ${check ? "✅ صحيح" : "❌ خطأ"}`);
-    } else {
-      console.log("❌ المستخدم غير موجود، جاري إنشائه...");
-
-      const hashedPassword2 = await bcrypt.hash(newPassword, 10);
-      await pool.query(
-        `INSERT INTO users (email, password, role) 
-         VALUES ($1, $2, 'admin')`,
-        [email, hashedPassword2],
-      );
-      console.log("✅ تم إنشاء مستخدم جديد");
-      console.log(`   البريد: ${email}`);
-      console.log(`   كلمة المرور: ${newPassword}`);
-    }
-
-    await pool.end();
-    process.exit(0);
-  } catch (error) {
-    console.error("❌ خطأ:", error.message);
-    process.exit(1);
   }
+
+  const hashedPassword = await bcrypt.hash(newPassword, 10);
+  const result = await pool.query(
+    `UPDATE users
+     SET password = $1,
+         failed_attempts = 0,
+         locked_until = NULL
+     WHERE LOWER(email) = LOWER($2)
+     RETURNING id, email, role, password`,
+    [hashedPassword, email],
+  );
+
+  if (result.rows.length === 0) {
+    throw new Error("No user exists with the requested email. No account was created.");
+  }
+
+  const passwordMatches = await bcrypt.compare(
+    newPassword,
+    result.rows[0].password,
+  );
+  if (!passwordMatches) {
+    throw new Error("Password hash verification failed.");
+  }
+
+  console.info(
+    `Password reset and verified for ${result.rows[0].email} (${result.rows[0].role}).`,
+  );
 }
 
-forceReset();
+resetPassword()
+  .catch((error) => {
+    console.error("Password reset failed:", error.message || error);
+    process.exitCode = 1;
+  })
+  .finally(() => pool.end());
