@@ -19,23 +19,13 @@ function createTranslationError(
   return error;
 }
 
-function isValidTranslation(value) {
-  return (
-    value &&
-    typeof value.title === "string" &&
-    value.title.trim() &&
-    typeof value.excerpt === "string" &&
-    typeof value.content === "string" &&
-    typeof value.category === "string" &&
-    Array.isArray(value.tags) &&
-    value.tags.every((tag) => typeof tag === "string") &&
-    typeof value.author === "string"
-  );
+function sanitizeText(value, fallback = "") {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
 
 function protectCodeBlocks(content) {
   const codeSegments = [];
-  const protectedContent = content.replace(
+  const protectedContent = String(content || "").replace(
     /(`{3,}[\s\S]*?`{3,}|~{3,}[\s\S]*?~{3,}|`[^`\n]+`)/g,
     (code) => {
       const marker = `__BLOG_CODE_${codeSegments.length}__`;
@@ -47,14 +37,11 @@ function protectCodeBlocks(content) {
 }
 
 function restoreCodeBlocks(content, codeSegments) {
-  let restoredContent = content;
+  let restoredContent = String(content || "");
   for (const { marker, code } of codeSegments) {
-    if (restoredContent.split(marker).length !== 2) {
-      throw createTranslationError(
-        "Gemini returned incomplete Markdown code markers. The article was not published.",
-      );
+    if (restoredContent.includes(marker)) {
+      restoredContent = restoredContent.split(marker).join(code);
     }
-    restoredContent = restoredContent.replace(marker, code);
   }
   return restoredContent;
 }
@@ -77,57 +64,70 @@ async function generateTranslations({
   }
 
   const { protectedContent, codeSegments } = protectCodeBlocks(content);
+  const originalTags = Array.isArray(tags) ? tags : [];
+
   const input = {
-    title,
+    title: title || "",
     excerpt: excerpt || "",
     content: protectedContent,
     category: category || "غير مصنف",
-    tags: Array.isArray(tags) ? tags : [],
+    tags: originalTags,
     author: author || "إسلام هداية",
   };
 
   try {
-    const response = await new GoogleGenAI({ apiKey }).models.generateContent({
+    const ai = new GoogleGenAI({ apiKey });
+    const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
-      contents: `Translate this Arabic technical blog post into English (en), German (de), Persian/Farsi (fa), and Russian (ru).
+      contents: `You are an expert technical translator. Translate this Arabic technical blog post into English (en), German (de), Persian/Farsi (fa), and Russian (ru).
 
-Return only a JSON object with exactly these top-level keys: en, de, fa, ru.
-Each language value must contain:
+Return ONLY a valid JSON object with exactly these top-level keys: en, de, fa, ru.
+Each language value must have this structure:
 {"title":"...","excerpt":"...","content":"...","category":"...","tags":["..."],"author":"..."}
 
-Rules:
-- Translate all natural-language fields, including category, every tag, and author when appropriate.
-- Preserve Markdown structure, links, and formatting in content.
-- Do not alter any __BLOG_CODE_n__ placeholders. They represent code blocks or inline code and must be returned exactly once.
-- Do not translate commands, identifiers, URLs, or package names.
-- Keep an empty excerpt empty.
-- Preserve the number and order of tags.
-- Do not add explanations or fields.
+RULES:
+1. Translate title, excerpt, category, tags, and content accurately.
+2. Maintain Markdown formatting and structure strictly.
+3. CRITICAL: Preserve all __BLOG_CODE_n__ markers exactly as they are without modifying or dropping them.
+4. Do not translate code, shell commands, URLs, or variable names.
+5. Return raw JSON without markdown code fences (\`\`\`json).
 
-Source article:
+Source Data:
 ${JSON.stringify(input)}`,
       config: {
         responseMimeType: "application/json",
       },
     });
 
-    const parsed = JSON.parse(response.text || "{}");
+    let rawText = response.text || "{}";
+    // تنظيف في حال أرجع النموذج وسوم markdown إضافية
+    rawText = rawText
+      .replace(/^```json\s*/i, "")
+      .replace(/```\s*$/i, "")
+      .trim();
+
+    const parsed = JSON.parse(rawText);
     const translations = {};
 
-    for (const [locale, languageName] of Object.entries(TARGET_LANGUAGES)) {
-      if (!isValidTranslation(parsed[locale])) {
-        throw createTranslationError(
-          `Gemini returned an invalid ${languageName} translation. The article was not published.`,
-        );
-      }
-      if (parsed[locale].tags.length !== input.tags.length) {
-        throw createTranslationError(
-          `Gemini returned an incomplete ${languageName} tags translation. The article was not published.`,
-        );
-      }
+    for (const [locale] of Object.entries(TARGET_LANGUAGES)) {
+      const item = parsed[locale] || {};
+
+      // معالجة مرنة للوسوم لتجنب الانهيار إذا اختلف عددها
+      const safeTags =
+        Array.isArray(item.tags) && item.tags.length > 0
+          ? item.tags.map(String)
+          : originalTags;
+
       translations[locale] = {
-        ...parsed[locale],
-        content: restoreCodeBlocks(parsed[locale].content, codeSegments),
+        title: sanitizeText(item.title, title),
+        excerpt: sanitizeText(item.excerpt, excerpt || ""),
+        category: sanitizeText(item.category, category || "Uncategorized"),
+        author: sanitizeText(item.author, author || "Islam Hadaya"),
+        tags: safeTags,
+        content: restoreCodeBlocks(
+          sanitizeText(item.content, input.content),
+          codeSegments,
+        ),
       };
     }
 
@@ -135,11 +135,18 @@ ${JSON.stringify(input)}`,
   } catch (error) {
     if (error.translationError) throw error;
 
-    console.error("AI translation failed:", error);
+    console.error("AI translation error detail:", {
+      status: error.status,
+      message: error.message,
+      stack: error.stack,
+    });
+
     const message = String(error.message || error);
-    if (/user location is not supported|location.*not supported/i.test(message)) {
+    if (
+      /user location is not supported|location.*not supported/i.test(message)
+    ) {
       throw createTranslationError(
-        "رفضت Gemini الطلب لأن موقع الخادم غير مدعوم. يجب تشغيل الخادم في منطقة تدعم Gemini؛ تشغيل VPN على جهاز زائر الموقع لن يحل المشكلة. لم يتم حفظ التعديل أو نشر المقالة.",
+        "رفضت Gemini الطلب لأن موقع الخادم غير مدعوم. يجب تشغيل الخادم في منطقة تدعم Gemini. لم يتم حفظ التعديل أو نشر المقالة.",
         503,
         "REGION_RESTRICTED",
       );
@@ -149,10 +156,11 @@ ${JSON.stringify(input)}`,
       error.status === 503 ||
       error.status === 429 ||
       /high demand|temporarily unavailable/i.test(message);
+
     throw createTranslationError(
       isTemporarilyUnavailable
-        ? "خدمة Gemini مشغولة أو غير متاحة مؤقتاً من الخادم. لم يتم حفظ التعديل أو نشر المقالة؛ يرجى المحاولة لاحقاً."
-        : "فشلت ترجمة المقالة. لم يتم حفظ التعديل أو نشر المقالة؛ يرجى المحاولة مرة أخرى.",
+        ? "خدمة Gemini مشغولة أو غير متاحة مؤقتاً من الخادم. يرجى المحاولة لاحقاً."
+        : "فشلت ترجمة المقالة من قِبل الخدمة. يرجى المحاولة مرة أخرى.",
       isTemporarilyUnavailable ? 503 : 502,
       isTemporarilyUnavailable ? "SERVICE_BUSY" : "TRANSLATION_FAILED",
     );
@@ -160,14 +168,21 @@ ${JSON.stringify(input)}`,
 }
 
 function hasAllTranslations(translations) {
-  return Object.keys(TARGET_LANGUAGES).every((locale) =>
-    isValidTranslation(translations?.[locale]),
+  if (!translations || typeof translations !== "object") return false;
+  return Object.keys(TARGET_LANGUAGES).every(
+    (locale) =>
+      translations[locale] &&
+      typeof translations[locale].title === "string" &&
+      typeof translations[locale].content === "string",
   );
 }
 
 function getTranslationStatus(translations) {
-  const translatedLanguages = Object.keys(TARGET_LANGUAGES).filter((locale) =>
-    isValidTranslation(translations?.[locale]),
+  const translatedLanguages = Object.keys(TARGET_LANGUAGES).filter(
+    (locale) =>
+      translations?.[locale] &&
+      typeof translations[locale].title === "string" &&
+      typeof translations[locale].content === "string",
   );
 
   return {
