@@ -1,41 +1,87 @@
 const pool = require("../config/database");
 const { sendTelegramAlert } = require("../lib/telegram");
-const {
-  generateTranslations,
-  getTranslationStatus,
-  hasAllTranslations,
-} = require("../lib/translate");
 
-const SUPPORTED_TRANSLATION_LOCALES = new Set(["en", "de", "fa", "ru"]);
+const SUPPORTED_TRANSLATION_LOCALES = new Set(["en"]);
 
 function localizePost(post, locale) {
   if (!locale || locale === "ar") return post;
 
   const translation = post.translations?.[locale];
-  if (!translation) {
-    return { ...post, translationAvailable: false };
-  }
-  const isComplete =
-    typeof translation.title === "string" &&
-    typeof translation.excerpt === "string" &&
-    typeof translation.content === "string" &&
-    typeof translation.category === "string" &&
-    typeof translation.author === "string" &&
-    Array.isArray(translation.tags) &&
-    translation.tags.every((tag) => typeof tag === "string");
-  if (!isComplete) {
+  if (
+    !translation ||
+    typeof translation.title !== "string" ||
+    !translation.title.trim() ||
+    typeof translation.content !== "string" ||
+    !translation.content.trim()
+  ) {
     return { ...post, translationAvailable: false };
   }
 
   return {
     ...post,
-    title: translation.title || post.title,
+    title: translation.title,
     excerpt: translation.excerpt ?? post.excerpt,
-    content: translation.content || post.content,
+    content: translation.content,
     category: translation.category || post.category,
     tags: Array.isArray(translation.tags) ? translation.tags : post.tags,
     author: translation.author || post.author,
     translationAvailable: true,
+  };
+}
+
+function getEnglishTranslationStatus(translations) {
+  const translation = translations?.en;
+  const englishTranslationAvailable =
+    Boolean(translation) &&
+    typeof translation.title === "string" &&
+    Boolean(translation.title.trim()) &&
+    typeof translation.content === "string" &&
+    Boolean(translation.content.trim());
+
+  return { englishTranslationAvailable };
+}
+
+function normalizeEnglishTranslation(input, source) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return null;
+  }
+
+  const title = typeof input.title === "string" ? input.title.trim() : "";
+  const content = typeof input.content === "string" ? input.content.trim() : "";
+  const category =
+    typeof input.category === "string" ? input.category.trim() : "";
+  const hasAnyValue = Object.values(input).some(
+    (value) =>
+      (typeof value === "string" && value.trim()) ||
+      (Array.isArray(value) && value.length > 0),
+  );
+
+  if (!hasAnyValue) return null;
+  if (!title || !content || !category) {
+    const error = new Error(
+      "أدخل العنوان والمحتوى والتصنيف الإنجليزي معاً، أو اترك حقول الإنجليزية فارغة.",
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return {
+    title,
+    excerpt:
+      typeof input.excerpt === "string" && input.excerpt.trim()
+        ? input.excerpt.trim()
+        : source.excerpt || "",
+    content,
+    category,
+    tags: Array.isArray(input.tags)
+      ? input.tags.filter((tag) => typeof tag === "string")
+      : Array.isArray(source.tags)
+        ? source.tags
+        : [],
+    author:
+      typeof input.author === "string" && input.author.trim()
+        ? input.author.trim()
+        : source.author || "",
   };
 }
 
@@ -61,7 +107,10 @@ exports.getAllPosts = async (req, res) => {
     const posts = result.rows.map((post) => {
       const localizedPost = localizePost(post, requestedLanguage);
       const publicPost = { ...localizedPost };
-      Object.assign(publicPost, getTranslationStatus(post.translations));
+      Object.assign(
+        publicPost,
+        getEnglishTranslationStatus(post.translations),
+      );
       delete publicPost.translations;
       return publicPost;
     });
@@ -77,7 +126,7 @@ exports.getAllPosts = async (req, res) => {
   }
 };
 
-// جلب مقالة واحدة (مع دعم اللغة ?lang=en أو ru أو de)
+// جلب مقالة واحدة (مع دعم اللغة ?lang=en)
 exports.getPost = async (req, res) => {
   try {
     const { id } = req.params;
@@ -105,6 +154,10 @@ exports.getPost = async (req, res) => {
     }
 
     const post = localizePost(result.rows[0], requestedLanguage);
+    Object.assign(
+      post,
+      getEnglishTranslationStatus(result.rows[0].translations),
+    );
 
     res.json({ post });
   } catch (error) {
@@ -138,6 +191,7 @@ exports.createPost = async (req, res) => {
       coverImage,
       author,
       status,
+      englishTranslation,
     } = req.body;
 
     if (!title || !content) {
@@ -162,18 +216,19 @@ exports.createPost = async (req, res) => {
     const normalizedAuthor = author || "إسلام هداية";
     const publishedStatus = status || "published";
 
-    // Translate before publishing so the database always has every locale.
-    const translations =
-      publishedStatus === "published"
-        ? await generateTranslations({
-            title,
-            excerpt: finalExcerpt,
-            content,
-            category: normalizedCategory,
-            tags: normalizedTags,
-            author: normalizedAuthor,
-          })
-        : {};
+    const translations = {};
+    const normalizedEnglishTranslation = normalizeEnglishTranslation(
+      englishTranslation,
+      {
+        excerpt: finalExcerpt,
+        category: normalizedCategory,
+        tags: normalizedTags,
+        author: normalizedAuthor,
+      },
+    );
+    if (normalizedEnglishTranslation) {
+      translations.en = normalizedEnglishTranslation;
+    }
 
     const result = await pool.query(
       `INSERT INTO posts (
@@ -223,19 +278,15 @@ exports.createPost = async (req, res) => {
       success: true,
       message:
         publishedStatus === "published"
-          ? "تم إنشاء المقالة وترجمتها إلى اللغات الأربع بنجاح"
+          ? "تم نشر المقالة بنجاح"
           : "تم حفظ المسودة",
       post: newPost,
-      ...getTranslationStatus(newPost.translations),
+      ...getEnglishTranslationStatus(newPost.translations),
     });
   } catch (error) {
     console.error("خطأ في إنشاء المقالة:", error);
-    if (error.translationError) {
-      return res.status(error.statusCode || 502).json({
-        error: error.message,
-        translationError: true,
-        code: error.code,
-      });
+    if (error.statusCode === 400) {
+      return res.status(400).json({ error: error.message });
     }
     res.status(500).json({ error: "حدث خطأ في إنشاء المقالة" });
   }
@@ -254,7 +305,7 @@ exports.updatePost = async (req, res) => {
       coverImage,
       author,
       status,
-      regenerateTranslations, // خيار إضافي: true إذا أردت إعادة توليد الترجمات بعد تعديل النص العربي
+      englishTranslation,
     } = req.body;
 
     const existingPost = await pool.query("SELECT * FROM posts WHERE id = $1", [
@@ -303,32 +354,31 @@ exports.updatePost = async (req, res) => {
       values.push(status);
     }
 
-    const translationSourceChanged =
-      (title !== undefined && title !== currentPost.title) ||
-      (excerpt !== undefined && excerpt !== currentPost.excerpt) ||
-      (content !== undefined && content !== currentPost.content) ||
-      (category !== undefined && category !== currentPost.category) ||
-      (author !== undefined && author !== currentPost.author) ||
-      (tags !== undefined &&
-        JSON.stringify(tags) !== JSON.stringify(currentPost.tags));
-    const nextStatus = status || currentPost.status;
-    const shouldGenerateTranslations =
-      nextStatus === "published" &&
-      (regenerateTranslations ||
-        translationSourceChanged ||
-        !hasAllTranslations(currentPost.translations));
+    if (englishTranslation !== undefined) {
+      const currentTranslations =
+        currentPost.translations &&
+        typeof currentPost.translations === "object" &&
+        !Array.isArray(currentPost.translations)
+          ? { ...currentPost.translations }
+          : {};
+      const normalizedEnglishTranslation = normalizeEnglishTranslation(
+        englishTranslation,
+        {
+          excerpt: excerpt !== undefined ? excerpt : currentPost.excerpt,
+          category: category !== undefined ? category : currentPost.category,
+          tags: tags !== undefined ? tags : currentPost.tags,
+          author: author !== undefined ? author : currentPost.author,
+        },
+      );
 
-    if (shouldGenerateTranslations) {
-      const newTranslations = await generateTranslations({
-        title: title ?? currentPost.title,
-        excerpt: excerpt !== undefined ? excerpt : currentPost.excerpt,
-        content: content ?? currentPost.content,
-        category: category ?? currentPost.category,
-        tags: tags ?? currentPost.tags,
-        author: author ?? currentPost.author,
-      });
+      if (normalizedEnglishTranslation) {
+        currentTranslations.en = normalizedEnglishTranslation;
+      } else {
+        delete currentTranslations.en;
+      }
+
       updates.push(`translations = $${paramCount++}::jsonb`);
-      values.push(JSON.stringify(newTranslations));
+      values.push(JSON.stringify(currentTranslations));
     }
 
     updates.push(`updated_at = CURRENT_TIMESTAMP`);
@@ -349,10 +399,6 @@ exports.updatePost = async (req, res) => {
       if (result.rows.length === 0) {
         await client.query("ROLLBACK");
         return res.status(404).json({ error: "المقالة غير موجودة" });
-      }
-
-      if (shouldGenerateTranslations && !hasAllTranslations(result.rows[0].translations)) {
-        throw new Error("لم يتم حفظ الترجمات كاملة في قاعدة البيانات");
       }
 
       await client.query(
@@ -380,16 +426,12 @@ exports.updatePost = async (req, res) => {
       success: true,
       message: "تم تحديث المقالة بنجاح",
       post: result.rows[0],
-      ...getTranslationStatus(result.rows[0].translations),
+      ...getEnglishTranslationStatus(result.rows[0].translations),
     });
   } catch (error) {
     console.error("خطأ في تحديث المقالة:", error);
-    if (error.translationError) {
-      return res.status(error.statusCode || 502).json({
-        error: error.message,
-        translationError: true,
-        code: error.code,
-      });
+    if (error.statusCode === 400) {
+      return res.status(400).json({ error: error.message });
     }
     res.status(500).json({ error: "حدث خطأ في تحديث المقالة" });
   }
